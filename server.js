@@ -56,7 +56,7 @@ async function proxyChatRequest(request, response) {
   }
 
   try {
-    const body = await readRequestBody(request);
+    const body = unwrapTransportEnvelope(await readRequestBody(request));
     const upstreamResponse = await fetch(upstreamUrl, {
       method: 'POST',
       headers: {
@@ -92,6 +92,19 @@ function readRequestBody(request) {
     request.on('end', () => resolve(body));
     request.on('error', reject);
   });
+}
+
+function unwrapTransportEnvelope(body) {
+  try {
+    const envelope = JSON.parse(body);
+    if (envelope?.encoding === 'base64-json' && typeof envelope.payload === 'string') {
+      return Buffer.from(envelope.payload, 'base64').toString('utf8');
+    }
+  } catch {
+    return body;
+  }
+
+  return body;
 }
 
 function sendJson(response, status, payload) {

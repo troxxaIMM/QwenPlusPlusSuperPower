@@ -3,6 +3,7 @@ import {
   appendMessage,
   buildCustomRequestBody,
   buildOpenAIRequestBody,
+  createApiTransportEnvelope,
   createChat,
   createInitialState,
   deleteChat,
@@ -240,7 +241,7 @@ async function requestAssistant(chatId) {
     const response = await fetch(settings.endpoint, {
       method: 'POST',
       headers: buildHeaders(settings),
-      body: JSON.stringify(body),
+      body: JSON.stringify(createApiTransportEnvelope(body)),
       signal: abortController.signal,
     });
 

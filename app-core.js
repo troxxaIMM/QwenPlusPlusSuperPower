@@ -239,6 +239,14 @@ export function formatUploadedFileForPrompt(file) {
   return `Файл: ${name}\n\`\`\`${language}\n${content}\n\`\`\``;
 }
 
+export function createApiTransportEnvelope(payload) {
+  const json = JSON.stringify(payload);
+  return {
+    encoding: 'base64-json',
+    payload: encodeBase64Utf8(json),
+  };
+}
+
 export function getActiveChat(state) {
   return state.chats.find((chat) => chat.id === state.activeChatId) ?? null;
 }
@@ -292,6 +300,19 @@ function languageFromFileName(name) {
   if (lowerName.endsWith('.py')) return 'python';
   if (lowerName.endsWith('.md')) return 'markdown';
   return 'text';
+}
+
+function encodeBase64Utf8(value) {
+  if (typeof btoa === 'function') {
+    const bytes = new TextEncoder().encode(value);
+    let binary = '';
+    bytes.forEach((byte) => {
+      binary += String.fromCharCode(byte);
+    });
+    return btoa(binary);
+  }
+
+  return Buffer.from(value, 'utf8').toString('base64');
 }
 
 function escapeHtml(value) {
