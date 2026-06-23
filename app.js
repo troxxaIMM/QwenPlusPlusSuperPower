@@ -17,7 +17,8 @@ import {
 } from './app-core.js';
 
 const STORAGE_KEY = 'qwen-console-state-v1';
-const TYPE_SPEED_MS = 10;
+const TYPE_SPEED_MS = 5;
+const MAX_TYPED_CHARS = 800;
 
 const els = {
   chatList: document.querySelector('#chatList'),
@@ -216,7 +217,7 @@ async function requestAssistant(chatId) {
   if (!settings.endpoint.trim()) {
     state = appendMessage(state, chatId, {
       role: 'assistant',
-      content: 'Endpoint API пока не указан. Добавьте адрес сервера в API_CONFIG_PLACEHOLDER в app-core.js.',
+      content: 'Endpoint API пока не указан.',
       error: true,
     });
     saveState();
@@ -247,9 +248,7 @@ async function requestAssistant(chatId) {
 
     const text = await response.text();
     if (isHtmlResponse(response, text)) {
-      throw new Error(
-        'Сервер вернул HTML вместо API-ответа. Проверьте, что Render создан как Web Service, а не Static Site.',
-      );
+      throw new Error('Сервер вернул HTML вместо API-ответа.');
     }
 
     const payload = parseResponse(text);
@@ -410,6 +409,12 @@ function renderStatus() {
 }
 
 function startTyping(messageId, content) {
+  if (content.length > MAX_TYPED_CHARS) {
+    typingMessageId = null;
+    renderMessages();
+    return;
+  }
+
   typingMessageId = messageId;
   const bubble = document.querySelector(`[data-message-id="${messageId}"]`);
   if (!bubble) return;
@@ -436,7 +441,7 @@ function startTyping(messageId, content) {
       return;
     }
 
-    index += content.length > 1200 ? 6 : 3;
+    index += 12;
     typingTimer = window.setTimeout(tick, TYPE_SPEED_MS);
   };
 
