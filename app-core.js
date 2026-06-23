@@ -20,7 +20,7 @@ export const DEFAULT_SETTINGS = {
   mode: 'openai',
   temperature: 0.7,
   topP: 0.9,
-  maxTokens: 300,
+  maxTokens: 4000,
   customTemplate: DEFAULT_CUSTOM_TEMPLATE,
 };
 
