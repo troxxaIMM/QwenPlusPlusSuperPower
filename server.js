@@ -18,7 +18,7 @@ const types = {
 createServer(async (request, response) => {
   const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
 
-  if (request.method === 'POST' && (url.pathname === '/api/chat' || url.pathname === '/api/chat/')) {
+  if (request.method === 'POST' && isChatRoute(url.pathname)) {
     await proxyChatRequest(request, response);
     return;
   }
@@ -95,6 +95,17 @@ function readRequestBody(request) {
 }
 
 function unwrapTransportEnvelope(body) {
+  const trimmedBody = body.trim();
+  if (/^[A-Za-z0-9+/=_-]+$/.test(trimmedBody)) {
+    try {
+      const decoded = Buffer.from(trimmedBody, 'base64').toString('utf8');
+      JSON.parse(decoded);
+      return decoded;
+    } catch {
+      return body;
+    }
+  }
+
   try {
     const envelope = JSON.parse(body);
     if (envelope?.encoding === 'base64-json' && typeof envelope.payload === 'string') {
@@ -105,6 +116,10 @@ function unwrapTransportEnvelope(body) {
   }
 
   return body;
+}
+
+function isChatRoute(pathname) {
+  return ['/message', '/message/', '/api/chat', '/api/chat/'].includes(pathname);
 }
 
 function sendJson(response, status, payload) {

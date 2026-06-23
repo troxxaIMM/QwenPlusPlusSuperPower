@@ -4,7 +4,7 @@ Multi-chat UI for a self-hosted AI model.
 
 ## Where to add API details
 
-- Frontend calls `/api/chat`.
+- Frontend calls `/message`.
 - Server forwards requests to `QWEN_API_URL`.
 - Server reads the key from `QWEN_API_KEY`.
 

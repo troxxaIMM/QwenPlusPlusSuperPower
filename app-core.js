@@ -1,5 +1,5 @@
 export const API_CONFIG_PLACEHOLDER = {
-  endpoint: '/api/chat',
+  endpoint: '/message',
   apiKey: '',
   model: 'qwen-hauhau',
 };
@@ -240,11 +240,7 @@ export function formatUploadedFileForPrompt(file) {
 }
 
 export function createApiTransportEnvelope(payload) {
-  const json = JSON.stringify(payload);
-  return {
-    encoding: 'base64-json',
-    payload: encodeBase64Utf8(json),
-  };
+  return encodeBase64Utf8(JSON.stringify(payload));
 }
 
 export function getActiveChat(state) {

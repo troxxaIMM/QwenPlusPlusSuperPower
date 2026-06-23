@@ -241,7 +241,7 @@ async function requestAssistant(chatId) {
     const response = await fetch(settings.endpoint, {
       method: 'POST',
       headers: buildHeaders(settings),
-      body: JSON.stringify(createApiTransportEnvelope(body)),
+      body: createApiTransportEnvelope(body),
       signal: abortController.signal,
     });
 
@@ -285,7 +285,7 @@ async function requestAssistant(chatId) {
 }
 
 function buildHeaders(currentSettings) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = { 'Content-Type': 'text/plain;charset=UTF-8' };
   if (currentSettings.apiKey.trim()) {
     headers.Authorization = `Bearer ${currentSettings.apiKey.trim()}`;
   }
