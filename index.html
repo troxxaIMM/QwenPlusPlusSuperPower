@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Qwen AI Console</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Список чатов">
+        <div class="brand">
+          <div class="brand-mark">Q</div>
+          <div>
+            <h1>Qwen Console</h1>
+            <p>Self-hosted AI workspace</p>
+          </div>
+        </div>
+
+        <button class="primary-action" id="newChatBtn" type="button">+ Новый чат</button>
+
+        <div class="chat-list" id="chatList" role="list"></div>
+      </aside>
+
+      <main class="conversation">
+        <header class="topbar">
+          <div>
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">API не настроен</span>
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost-button" id="renameChatBtn" type="button">Переименовать</button>
+            <button class="ghost-button" id="exportChatBtn" type="button">Экспорт</button>
+            <button class="ghost-button danger" id="deleteChatBtn" type="button">Удалить</button>
+          </div>
+        </header>
+
+        <section class="messages" id="messages" aria-live="polite"></section>
+
+        <form class="composer" id="composer">
+          <textarea
+            id="messageInput"
+            rows="3"
+            placeholder="Напишите сообщение модели..."
+            autocomplete="off"
+          ></textarea>
+          <div class="composer-footer">
+            <span id="hintText">Добавьте endpoint и ключ в API_CONFIG_PLACEHOLDER в app-core.js.</span>
+            <div>
+              <button class="ghost-button" id="stopBtn" type="button" disabled>Стоп</button>
+              <button class="send-button" id="sendBtn" type="submit">Отправить</button>
+            </div>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
