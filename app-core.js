@@ -231,6 +231,14 @@ export function renderMarkdown(markdown) {
   return blocks.join('');
 }
 
+export function formatUploadedFileForPrompt(file) {
+  const name = String(file?.name ?? 'file.txt');
+  const content = String(file?.content ?? '');
+  const language = languageFromFileName(name);
+
+  return `Файл: ${name}\n\`\`\`${language}\n${content}\n\`\`\``;
+}
+
 export function getActiveChat(state) {
   return state.chats.find((chat) => chat.id === state.activeChatId) ?? null;
 }
@@ -277,6 +285,13 @@ function renderCodeBlock(code) {
     `<pre><code${className}>${escapeHtml(rawCode)}</code></pre>`,
     '</div>',
   ].join('');
+}
+
+function languageFromFileName(name) {
+  const lowerName = String(name).toLowerCase();
+  if (lowerName.endsWith('.py')) return 'python';
+  if (lowerName.endsWith('.md')) return 'markdown';
+  return 'text';
 }
 
 function escapeHtml(value) {

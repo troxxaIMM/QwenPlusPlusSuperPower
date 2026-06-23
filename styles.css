@@ -503,6 +503,59 @@ input {
     background 160ms ease;
 }
 
+.attachment-list {
+  display: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 10px;
+}
+
+.attachment-list.has-files {
+  display: flex;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  gap: 8px;
+  padding: 7px 8px 7px 10px;
+  border: 1px solid rgba(45, 212, 191, 0.22);
+  border-radius: 8px;
+  background: rgba(45, 212, 191, 0.08);
+}
+
+.attachment-name {
+  overflow: hidden;
+  max-width: 220px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-size {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.attachment-chip button {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.attachment-chip button:hover {
+  border-color: rgba(255, 107, 107, 0.4);
+  color: #ffd9d9;
+}
+
 input {
   margin-top: 7px;
   padding: 10px 11px;

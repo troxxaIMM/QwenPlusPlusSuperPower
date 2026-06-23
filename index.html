@@ -38,6 +38,7 @@
         <section class="messages" id="messages" aria-live="polite"></section>
 
         <form class="composer" id="composer">
+          <div class="attachment-list" id="attachmentList" aria-live="polite"></div>
           <textarea
             id="messageInput"
             rows="3"
@@ -45,8 +46,10 @@
             autocomplete="off"
           ></textarea>
           <div class="composer-footer">
-            <span id="hintText">Добавьте endpoint и ключ в API_CONFIG_PLACEHOLDER в app-core.js.</span>
+            <span id="hintText">Enter отправляет, Shift+Enter переносит строку.</span>
             <div>
+              <input id="fileInput" type="file" accept=".py,.txt,.md,text/plain,text/markdown" multiple hidden />
+              <button class="ghost-button" id="attachFileBtn" type="button">Файл</button>
               <button class="ghost-button" id="stopBtn" type="button" disabled>Стоп</button>
               <button class="send-button" id="sendBtn" type="submit">Отправить</button>
             </div>

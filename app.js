@@ -7,6 +7,7 @@ import {
   createInitialState,
   deleteChat,
   extractAssistantReply,
+  formatUploadedFileForPrompt,
   getActiveChat,
   renameChat,
   renderMarkdown,
@@ -22,6 +23,9 @@ const els = {
   messages: document.querySelector('#messages'),
   composer: document.querySelector('#composer'),
   messageInput: document.querySelector('#messageInput'),
+  attachmentList: document.querySelector('#attachmentList'),
+  attachFileBtn: document.querySelector('#attachFileBtn'),
+  fileInput: document.querySelector('#fileInput'),
   newChatBtn: document.querySelector('#newChatBtn'),
   renameChatBtn: document.querySelector('#renameChatBtn'),
   deleteChatBtn: document.querySelector('#deleteChatBtn'),
@@ -38,15 +42,19 @@ let settings = updateSettings(DEFAULT_SETTINGS);
 let abortController = null;
 let typingMessageId = null;
 let typingTimer = null;
+let pendingFiles = [];
 
 if (state.chats.length === 0) {
   state = createChat(state, 'Первый чат');
 }
 
 render();
+renderAttachments();
 
 els.newChatBtn.addEventListener('click', () => {
   stopTyping();
+  pendingFiles = [];
+  renderAttachments();
   state = createChat(state, `Чат ${state.chats.length + 1}`);
   saveState();
   render();
@@ -68,6 +76,8 @@ els.deleteChatBtn.addEventListener('click', () => {
   const confirmed = window.confirm(`Удалить "${chat.title}"?`);
   if (!confirmed) return;
   stopTyping();
+  pendingFiles = [];
+  renderAttachments();
   state = deleteChat(state, chat.id);
   if (state.chats.length === 0) state = createChat(state, 'Новый чат');
   saveState();
@@ -90,6 +100,8 @@ els.chatList.addEventListener('click', (event) => {
   const button = event.target.closest('[data-chat-id]');
   if (!button) return;
   stopTyping();
+  pendingFiles = [];
+  renderAttachments();
   state = setActiveChat(state, button.dataset.chatId);
   saveState();
   render();
@@ -104,6 +116,22 @@ els.messages.addEventListener('click', async (event) => {
   await navigator.clipboard.writeText(code);
   button.textContent = 'Скопировано';
   window.setTimeout(() => (button.textContent = 'Копировать'), 1200);
+});
+
+els.attachFileBtn.addEventListener('click', () => {
+  els.fileInput.click();
+});
+
+els.fileInput.addEventListener('change', async () => {
+  await addSelectedFiles([...els.fileInput.files]);
+  els.fileInput.value = '';
+});
+
+els.attachmentList.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-remove-file-id]');
+  if (!button) return;
+  pendingFiles = pendingFiles.filter((file) => file.id !== button.dataset.removeFileId);
+  renderAttachments();
 });
 
 els.composer.addEventListener('submit', async (event) => {
@@ -126,14 +154,59 @@ els.stopBtn.addEventListener('click', () => {
 async function sendMessage() {
   const chat = getActiveChat(state);
   const content = els.messageInput.value.trim();
-  if (!chat || !content || abortController) return;
+  if (!chat || (!content && pendingFiles.length === 0) || abortController) return;
 
   stopTyping();
   els.messageInput.value = '';
-  state = appendMessage(state, chat.id, { role: 'user', content });
+  const messageContent = buildUserMessageContent(content, pendingFiles);
+  pendingFiles = [];
+  renderAttachments();
+
+  state = appendMessage(state, chat.id, { role: 'user', content: messageContent });
   saveState();
   render();
   await requestAssistant(chat.id);
+}
+
+async function addSelectedFiles(files) {
+  const allowedExtensions = ['.py', '.txt', '.md'];
+  const readableFiles = files.filter((file) =>
+    allowedExtensions.some((extension) => file.name.toLowerCase().endsWith(extension)),
+  );
+
+  const loadedFiles = await Promise.all(
+    readableFiles.map(async (file) => ({
+      id: `${file.name}-${file.lastModified}-${file.size}-${Math.random().toString(36).slice(2)}`,
+      name: file.name,
+      size: file.size,
+      content: await file.text(),
+    })),
+  );
+
+  pendingFiles = [...pendingFiles, ...loadedFiles];
+  renderAttachments();
+}
+
+function buildUserMessageContent(content, files) {
+  const fileBlocks = files.map(formatUploadedFileForPrompt);
+  return [content, ...fileBlocks].filter(Boolean).join('\n\n');
+}
+
+function renderAttachments() {
+  els.attachmentList.innerHTML = '';
+  els.attachmentList.classList.toggle('has-files', pendingFiles.length > 0);
+
+  pendingFiles.forEach((file) => {
+    const item = document.createElement('div');
+    item.className = 'attachment-chip';
+    item.innerHTML = `
+      <span class="attachment-name"></span>
+      <span class="attachment-size">${formatFileSize(file.size)}</span>
+      <button type="button" data-remove-file-id="${file.id}" aria-label="Удалить файл">x</button>
+    `;
+    item.querySelector('.attachment-name').textContent = file.name;
+    els.attachmentList.append(item);
+  });
 }
 
 async function requestAssistant(chatId) {
@@ -267,7 +340,7 @@ function renderMessages() {
     empty.innerHTML = `
       <span class="eyebrow">Qwen PlusPlus SuperPower</span>
       <h2>Готов к разговору</h2>
-      <p>Создавайте отдельные чаты, отправляйте сообщения клавишей Enter и получайте ответы с форматированием. Shift+Enter переносит строку.</p>
+      <p>Создавайте отдельные чаты, прикрепляйте .py, .txt и .md файлы, отправляйте сообщения клавишей Enter. Shift+Enter переносит строку.</p>
     `;
     els.messages.append(empty);
     return;
@@ -331,7 +404,7 @@ function renderStatus() {
   els.statusDot.classList.toggle('ready', hasEndpoint);
   els.statusText.textContent = hasEndpoint ? 'API подключен' : 'API не настроен';
   els.hintText.textContent = hasEndpoint
-    ? 'Enter отправляет, Shift+Enter переносит строку.'
+    ? 'Enter отправляет, Shift+Enter переносит строку. Можно прикрепить .py, .txt, .md.'
     : 'Добавьте endpoint и ключ в API_CONFIG_PLACEHOLDER в app-core.js.';
 }
 
@@ -378,6 +451,7 @@ function stopTyping() {
 function setBusy(isBusy) {
   els.sendBtn.disabled = isBusy;
   els.stopBtn.disabled = !isBusy;
+  els.attachFileBtn.disabled = isBusy;
 }
 
 function loadState() {
@@ -398,4 +472,10 @@ function escapeText(value) {
   const span = document.createElement('span');
   span.textContent = value;
   return span.innerHTML;
+}
+
+function formatFileSize(size) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
