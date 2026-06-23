@@ -9,11 +9,13 @@ import {
   extractAssistantReply,
   getActiveChat,
   renameChat,
+  renderMarkdown,
   setActiveChat,
   updateSettings,
 } from './app-core.js';
 
 const STORAGE_KEY = 'qwen-console-state-v1';
+const TYPE_SPEED_MS = 10;
 
 const els = {
   chatList: document.querySelector('#chatList'),
@@ -34,6 +36,8 @@ const els = {
 let state = loadState();
 let settings = updateSettings(DEFAULT_SETTINGS);
 let abortController = null;
+let typingMessageId = null;
+let typingTimer = null;
 
 if (state.chats.length === 0) {
   state = createChat(state, 'Первый чат');
@@ -42,6 +46,7 @@ if (state.chats.length === 0) {
 render();
 
 els.newChatBtn.addEventListener('click', () => {
+  stopTyping();
   state = createChat(state, `Чат ${state.chats.length + 1}`);
   saveState();
   render();
@@ -62,6 +67,7 @@ els.deleteChatBtn.addEventListener('click', () => {
   if (!chat) return;
   const confirmed = window.confirm(`Удалить "${chat.title}"?`);
   if (!confirmed) return;
+  stopTyping();
   state = deleteChat(state, chat.id);
   if (state.chats.length === 0) state = createChat(state, 'Новый чат');
   saveState();
@@ -83,6 +89,7 @@ els.exportChatBtn.addEventListener('click', () => {
 els.chatList.addEventListener('click', (event) => {
   const button = event.target.closest('[data-chat-id]');
   if (!button) return;
+  stopTyping();
   state = setActiveChat(state, button.dataset.chatId);
   saveState();
   render();
@@ -94,14 +101,15 @@ els.composer.addEventListener('submit', async (event) => {
 });
 
 els.messageInput.addEventListener('keydown', async (event) => {
-  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-    event.preventDefault();
-    await sendMessage();
-  }
+  if (event.key !== 'Enter') return;
+  if (event.shiftKey) return;
+  event.preventDefault();
+  await sendMessage();
 });
 
 els.stopBtn.addEventListener('click', () => {
   abortController?.abort();
+  stopTyping();
 });
 
 async function sendMessage() {
@@ -109,6 +117,7 @@ async function sendMessage() {
   const content = els.messageInput.value.trim();
   if (!chat || !content || abortController) return;
 
+  stopTyping();
   els.messageInput.value = '';
   state = appendMessage(state, chat.id, { role: 'user', content });
   saveState();
@@ -135,6 +144,7 @@ async function requestAssistant(chatId) {
 
   abortController = new AbortController();
   setBusy(true);
+  renderThinking();
 
   try {
     const cleanMessages = chat.messages.filter((message) => !message.error);
@@ -161,6 +171,13 @@ async function requestAssistant(chatId) {
       role: 'assistant',
       content: extractAssistantReply(payload) || 'Пустой ответ от сервера.',
     });
+    saveState();
+    render();
+
+    const lastMessage = getActiveChat(state)?.messages.at(-1);
+    if (lastMessage?.role === 'assistant' && !lastMessage.error) {
+      startTyping(lastMessage.id, lastMessage.content);
+    }
   } catch (error) {
     const aborted = error.name === 'AbortError';
     state = appendMessage(state, chatId, {
@@ -168,11 +185,11 @@ async function requestAssistant(chatId) {
       content: aborted ? 'Запрос остановлен.' : `Ошибка API: ${error.message}`,
       error: !aborted,
     });
+    saveState();
+    render();
   } finally {
     abortController = null;
     setBusy(false);
-    saveState();
-    render();
   }
 }
 
@@ -226,8 +243,9 @@ function renderMessages() {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
     empty.innerHTML = `
-      <h2>Готов к подключению модели</h2>
-      <p>Создавайте несколько чатов и отправляйте сообщения. API подключается в коде через API_CONFIG_PLACEHOLDER; системный промпт не отправляется, потому что он уже задан в модели.</p>
+      <span class="eyebrow">Qwen PlusPlus SuperPower</span>
+      <h2>Готов к разговору</h2>
+      <p>Создавайте отдельные чаты, отправляйте сообщения клавишей Enter и получайте ответы с форматированием. Shift+Enter переносит строку.</p>
     `;
     els.messages.append(empty);
     return;
@@ -242,8 +260,15 @@ function renderMessages() {
     role.textContent = message.role === 'user' ? 'Вы' : message.error ? 'Ошибка' : 'AI';
 
     const bubble = document.createElement('div');
-    bubble.className = 'bubble';
-    bubble.textContent = message.content;
+    bubble.className = 'bubble markdown-body';
+    bubble.dataset.messageId = message.id;
+
+    if (message.role === 'assistant' && !message.error) {
+      bubble.innerHTML =
+        typingMessageId === message.id ? escapeText(message.content) : renderMarkdown(message.content);
+    } else {
+      bubble.textContent = message.content;
+    }
 
     const actions = document.createElement('div');
     actions.className = 'bubble-actions';
@@ -266,13 +291,66 @@ function renderMessages() {
   els.messages.scrollTop = els.messages.scrollHeight;
 }
 
+function renderThinking() {
+  const thinking = document.createElement('article');
+  thinking.className = 'message assistant thinking-row';
+  thinking.innerHTML = `
+    <div class="role">AI</div>
+    <div class="bubble thinking">
+      <span></span><span></span><span></span>
+    </div>
+  `;
+  els.messages.append(thinking);
+  els.messages.scrollTop = els.messages.scrollHeight;
+}
+
 function renderStatus() {
   const hasEndpoint = Boolean(settings.endpoint.trim());
   els.statusDot.classList.toggle('ready', hasEndpoint);
-  els.statusText.textContent = hasEndpoint ? 'API настроен в коде' : 'API не настроен';
+  els.statusText.textContent = hasEndpoint ? 'API подключен' : 'API не настроен';
   els.hintText.textContent = hasEndpoint
-    ? 'Ctrl+Enter отправляет сообщение.'
+    ? 'Enter отправляет, Shift+Enter переносит строку.'
     : 'Добавьте endpoint и ключ в API_CONFIG_PLACEHOLDER в app-core.js.';
+}
+
+function startTyping(messageId, content) {
+  typingMessageId = messageId;
+  const bubble = document.querySelector(`[data-message-id="${messageId}"]`);
+  if (!bubble) return;
+
+  const actions = bubble.querySelector('.bubble-actions');
+  bubble.textContent = '';
+  if (actions) bubble.append(actions);
+
+  let index = 0;
+  const tick = () => {
+    const visible = content.slice(0, index);
+    const textNode = document.createTextNode(visible);
+    bubble.childNodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) node.remove();
+    });
+    bubble.prepend(textNode);
+    els.messages.scrollTop = els.messages.scrollHeight;
+
+    if (index >= content.length) {
+      typingMessageId = null;
+      if (typingTimer) window.clearTimeout(typingTimer);
+      typingTimer = null;
+      renderMessages();
+      return;
+    }
+
+    index += content.length > 1200 ? 6 : 3;
+    typingTimer = window.setTimeout(tick, TYPE_SPEED_MS);
+  };
+
+  tick();
+}
+
+function stopTyping() {
+  if (typingTimer) window.clearTimeout(typingTimer);
+  typingTimer = null;
+  typingMessageId = null;
 }
 
 function setBusy(isBusy) {
@@ -292,4 +370,10 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function escapeText(value) {
+  const span = document.createElement('span');
+  span.textContent = value;
+  return span.innerHTML;
 }

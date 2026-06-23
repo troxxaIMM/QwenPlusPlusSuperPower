@@ -159,6 +159,80 @@ export function extractAssistantReply(payload) {
   return JSON.stringify(payload, null, 2);
 }
 
+export function renderMarkdown(markdown) {
+  const lines = String(markdown ?? '').replace(/\r\n/g, '\n').split('\n');
+  const blocks = [];
+  let paragraph = [];
+  let list = [];
+  let code = null;
+
+  const flushParagraph = () => {
+    if (paragraph.length === 0) return;
+    blocks.push(`<p>${renderInline(paragraph.join('\n'))}</p>`);
+    paragraph = [];
+  };
+
+  const flushList = () => {
+    if (list.length === 0) return;
+    blocks.push(`<ul>${list.map((item) => `<li>${renderInline(item)}</li>`).join('')}</ul>`);
+    list = [];
+  };
+
+  for (const line of lines) {
+    const fence = line.match(/^```([\w-]*)\s*$/);
+    if (fence) {
+      if (code) {
+        const language = code.language ? ` class="language-${escapeHtml(code.language)}"` : '';
+        blocks.push(`<pre><code${language}>${escapeHtml(code.lines.join('\n'))}</code></pre>`);
+        code = null;
+      } else {
+        flushParagraph();
+        flushList();
+        code = { language: fence[1] || '', lines: [] };
+      }
+      continue;
+    }
+
+    if (code) {
+      code.lines.push(line);
+      continue;
+    }
+
+    if (!line.trim()) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = heading[1].length + 2;
+      blocks.push(`<h${level}>${renderInline(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+    if (bullet) {
+      flushParagraph();
+      list.push(bullet[1]);
+      continue;
+    }
+
+    paragraph.push(line);
+  }
+
+  if (code) {
+    const language = code.language ? ` class="language-${escapeHtml(code.language)}"` : '';
+    blocks.push(`<pre><code${language}>${escapeHtml(code.lines.join('\n'))}</code></pre>`);
+  }
+  flushParagraph();
+  flushList();
+
+  return blocks.join('');
+}
+
 export function getActiveChat(state) {
   return state.chats.find((chat) => chat.id === state.activeChatId) ?? null;
 }
@@ -180,4 +254,22 @@ function toNumber(value, fallback) {
 
 function escapeJsonString(value) {
   return JSON.stringify(String(value)).slice(1, -1);
+}
+
+function renderInline(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  return html.replace(/\n/g, '<br>');
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
