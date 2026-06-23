@@ -16,12 +16,20 @@ const types = {
 };
 
 createServer(async (request, response) => {
-  if (request.method === 'POST' && request.url === '/api/chat') {
+  const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+
+  if (request.method === 'POST' && (url.pathname === '/api/chat' || url.pathname === '/api/chat/')) {
     await proxyChatRequest(request, response);
     return;
   }
 
-  const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+  if (url.pathname.startsWith('/api/')) {
+    sendJson(response, 404, {
+      error: `Unknown API route: ${url.pathname}`,
+    });
+    return;
+  }
+
   const requestedPath = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');
   let filePath = join(root, requestedPath === '/' ? 'index.html' : requestedPath);
 
