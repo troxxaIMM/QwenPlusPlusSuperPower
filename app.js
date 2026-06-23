@@ -161,6 +161,12 @@ async function requestAssistant(chatId) {
     });
 
     const text = await response.text();
+    if (isHtmlResponse(response, text)) {
+      throw new Error(
+        'Сервер вернул HTML вместо API-ответа. Проверьте, что Render создан как Web Service, а не Static Site.',
+      );
+    }
+
     const payload = parseResponse(text);
 
     if (!response.ok) {
@@ -208,6 +214,11 @@ function parseResponse(text) {
   } catch {
     return text;
   }
+}
+
+function isHtmlResponse(response, text) {
+  const contentType = response.headers.get('content-type') || '';
+  return contentType.includes('text/html') || text.trimStart().toLowerCase().startsWith('<!doctype html');
 }
 
 function render() {

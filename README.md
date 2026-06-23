@@ -15,7 +15,7 @@ The model's own prompt is used; this site does not send a separate system prompt
 
 Recommended Web Service settings:
 
-- Root Directory: `outputs/ai-chat-site`
+- Root Directory: empty or `.`
 - Build Command: empty
 - Start Command: `node server.js`
 

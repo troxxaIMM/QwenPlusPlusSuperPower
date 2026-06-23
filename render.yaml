@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: qwen-plusplus-superpower
+    runtime: node
+    plan: free
+    buildCommand: ""
+    startCommand: "node server.js"
+    envVars:
+      - key: QWEN_API_URL
+        value: http://136.59.129.136:35010/qwen/v1/chat/completions
+      - key: QWEN_API_KEY
+        sync: false
