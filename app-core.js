@@ -182,8 +182,7 @@ export function renderMarkdown(markdown) {
     const fence = line.match(/^```([\w-]*)\s*$/);
     if (fence) {
       if (code) {
-        const language = code.language ? ` class="language-${escapeHtml(code.language)}"` : '';
-        blocks.push(`<pre><code${language}>${escapeHtml(code.lines.join('\n'))}</code></pre>`);
+        blocks.push(renderCodeBlock(code));
         code = null;
       } else {
         flushParagraph();
@@ -224,8 +223,7 @@ export function renderMarkdown(markdown) {
   }
 
   if (code) {
-    const language = code.language ? ` class="language-${escapeHtml(code.language)}"` : '';
-    blocks.push(`<pre><code${language}>${escapeHtml(code.lines.join('\n'))}</code></pre>`);
+    blocks.push(renderCodeBlock(code));
   }
   flushParagraph();
   flushList();
@@ -263,6 +261,22 @@ function renderInline(text) {
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
   return html.replace(/\n/g, '<br>');
+}
+
+function renderCodeBlock(code) {
+  const rawCode = code.lines.join('\n');
+  const languageName = code.language || 'text';
+  const className = code.language ? ` class="language-${escapeHtml(code.language)}"` : '';
+
+  return [
+    `<div class="code-block" data-code="${escapeHtml(rawCode)}">`,
+    '<div class="code-block-header">',
+    `<span class="code-language">${escapeHtml(languageName)}</span>`,
+    '<button class="code-copy-button" type="button">Копировать</button>',
+    '</div>',
+    `<pre><code${className}>${escapeHtml(rawCode)}</code></pre>`,
+    '</div>',
+  ].join('');
 }
 
 function escapeHtml(value) {

@@ -95,6 +95,17 @@ els.chatList.addEventListener('click', (event) => {
   render();
 });
 
+els.messages.addEventListener('click', async (event) => {
+  const button = event.target.closest('.code-copy-button');
+  if (!button) return;
+
+  const codeBlock = button.closest('.code-block');
+  const code = codeBlock?.dataset.code ?? '';
+  await navigator.clipboard.writeText(code);
+  button.textContent = 'Скопировано';
+  window.setTimeout(() => (button.textContent = 'Копировать'), 1200);
+});
+
 els.composer.addEventListener('submit', async (event) => {
   event.preventDefault();
   await sendMessage();
