@@ -17,8 +17,8 @@ import {
 } from './app-core.js';
 
 const STORAGE_KEY = 'qwen-console-state-v1';
-const TYPE_SPEED_MS = 5;
-const MAX_TYPED_CHARS = 800;
+const AUTO_SCROLL_MARGIN = 140;
+const STREAM_RENDER_INTERVAL_MS = 80;
 
 const els = {
   chatList: document.querySelector('#chatList'),
@@ -34,6 +34,7 @@ const els = {
   exportChatBtn: document.querySelector('#exportChatBtn'),
   stopBtn: document.querySelector('#stopBtn'),
   sendBtn: document.querySelector('#sendBtn'),
+  scrollBottomBtn: document.querySelector('#scrollBottomBtn'),
   statusDot: document.querySelector('#statusDot'),
   statusText: document.querySelector('#statusText'),
   hintText: document.querySelector('#hintText'),
@@ -42,8 +43,6 @@ const els = {
 let state = loadState();
 let settings = updateSettings(DEFAULT_SETTINGS);
 let abortController = null;
-let typingMessageId = null;
-let typingTimer = null;
 let pendingFiles = [];
 
 if (state.chats.length === 0) {
@@ -120,6 +119,12 @@ els.messages.addEventListener('click', async (event) => {
   window.setTimeout(() => (button.textContent = 'Копировать'), 1200);
 });
 
+els.messages.addEventListener('scroll', updateScrollButton);
+
+els.scrollBottomBtn.addEventListener('click', () => {
+  scrollMessagesToBottom({ smooth: true });
+});
+
 els.attachFileBtn.addEventListener('click', () => {
   els.fileInput.click();
 });
@@ -150,7 +155,6 @@ els.messageInput.addEventListener('keydown', async (event) => {
 
 els.stopBtn.addEventListener('click', () => {
   abortController?.abort();
-  stopTyping();
 });
 
 async function sendMessage() {
@@ -158,7 +162,6 @@ async function sendMessage() {
   const content = els.messageInput.value.trim();
   if (!chat || (!content && pendingFiles.length === 0) || abortController) return;
 
-  stopTyping();
   els.messageInput.value = '';
   const messageContent = buildUserMessageContent(content, pendingFiles);
   pendingFiles = [];
@@ -166,7 +169,7 @@ async function sendMessage() {
 
   state = appendMessage(state, chat.id, { role: 'user', content: messageContent });
   saveState();
-  render();
+  render({ scrollToBottom: true });
   await requestAssistant(chat.id);
 }
 
@@ -221,7 +224,7 @@ async function requestAssistant(chatId) {
       error: true,
     });
     saveState();
-    render();
+    render({ scrollToBottom: true });
     return;
   }
 
@@ -246,6 +249,11 @@ async function requestAssistant(chatId) {
       signal: abortController.signal,
     });
 
+    if (isStreamingResponse(response)) {
+      await readStreamingAssistant(response, chatId);
+      return;
+    }
+
     const text = await response.text();
     if (isHtmlResponse(response, text)) {
       throw new Error('Сервер вернул HTML вместо API-ответа.');
@@ -262,12 +270,7 @@ async function requestAssistant(chatId) {
       content: extractAssistantReply(payload) || 'Пустой ответ от сервера.',
     });
     saveState();
-    render();
-
-    const lastMessage = getActiveChat(state)?.messages.at(-1);
-    if (lastMessage?.role === 'assistant' && !lastMessage.error) {
-      startTyping(lastMessage.id, lastMessage.content);
-    }
+    render({ scrollToBottom: true });
   } catch (error) {
     const aborted = error.name === 'AbortError';
     state = appendMessage(state, chatId, {
@@ -276,11 +279,66 @@ async function requestAssistant(chatId) {
       error: !aborted,
     });
     saveState();
-    render();
+    render({ scrollToBottom: true });
   } finally {
     abortController = null;
     setBusy(false);
   }
+}
+
+async function readStreamingAssistant(response, chatId) {
+  if (!response.ok) {
+    const text = await response.text();
+    const payload = parseResponse(text);
+    throw new Error(`HTTP ${response.status}: ${extractAssistantReply(payload) || text}`);
+  }
+
+  state = appendMessage(state, chatId, { role: 'assistant', content: '' });
+  const messageId = getChatById(chatId)?.messages.at(-1)?.id;
+  if (!messageId) return;
+
+  saveState();
+  render({ scrollToBottom: true });
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let content = '';
+  let lastRenderAt = 0;
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Сервер не вернул поток ответа.');
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split(/\r?\n\r?\n/);
+    buffer = events.pop() || '';
+
+    for (const event of events) {
+      const result = readStreamEvent(event);
+      if (result.done) {
+        updateMessageContent(chatId, messageId, content || 'Пустой ответ от сервера.');
+        saveState();
+        render({ scrollToBottom: isNearMessagesBottom() });
+        return;
+      }
+      if (!result.content) continue;
+
+      content += result.content;
+      updateMessageContent(chatId, messageId, content);
+
+      const now = performance.now();
+      if (now - lastRenderAt >= STREAM_RENDER_INTERVAL_MS) {
+        renderStreamingText(messageId, content);
+        lastRenderAt = now;
+      }
+    }
+  }
+
+  updateMessageContent(chatId, messageId, content || 'Пустой ответ от сервера.');
+  saveState();
+  render({ scrollToBottom: isNearMessagesBottom() });
 }
 
 function buildHeaders(currentSettings) {
@@ -300,14 +358,45 @@ function parseResponse(text) {
   }
 }
 
+function isStreamingResponse(response) {
+  return (response.headers.get('content-type') || '').includes('text/event-stream');
+}
+
+function readStreamEvent(event) {
+  const dataLines = event
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trim());
+
+  let content = '';
+
+  for (const data of dataLines) {
+    if (data === '[DONE]') return { done: true, content };
+    if (!data) continue;
+
+    try {
+      const payload = JSON.parse(data);
+      content +=
+        payload.choices?.[0]?.delta?.content ??
+        payload.choices?.[0]?.message?.content ??
+        payload.choices?.[0]?.text ??
+        '';
+    } catch {
+      // Ignore malformed stream fragments; a complete fragment should arrive later.
+    }
+  }
+
+  return { done: false, content };
+}
+
 function isHtmlResponse(response, text) {
   const contentType = response.headers.get('content-type') || '';
   return contentType.includes('text/html') || text.trimStart().toLowerCase().startsWith('<!doctype html');
 }
 
-function render() {
+function render(options = {}) {
   renderChatList();
-  renderMessages();
+  renderMessages(options);
   renderStatus();
 }
 
@@ -330,8 +419,9 @@ function renderChatList() {
     });
 }
 
-function renderMessages() {
+function renderMessages({ scrollToBottom = false } = {}) {
   const chat = getActiveChat(state);
+  const shouldPinToBottom = scrollToBottom || isNearMessagesBottom();
   els.messages.innerHTML = '';
 
   if (!chat || chat.messages.length === 0) {
@@ -343,6 +433,7 @@ function renderMessages() {
       <p>Создавайте отдельные чаты, прикрепляйте .py, .txt и .md файлы, отправляйте сообщения клавишей Enter. Shift+Enter переносит строку.</p>
     `;
     els.messages.append(empty);
+    updateScrollButton();
     return;
   }
 
@@ -359,8 +450,7 @@ function renderMessages() {
     bubble.dataset.messageId = message.id;
 
     if (message.role === 'assistant' && !message.error) {
-      bubble.innerHTML =
-        typingMessageId === message.id ? escapeText(message.content) : renderMarkdown(message.content);
+      bubble.innerHTML = renderMarkdown(message.content);
     } else {
       bubble.textContent = message.content;
     }
@@ -383,7 +473,8 @@ function renderMessages() {
     els.messages.append(row);
   });
 
-  els.messages.scrollTop = els.messages.scrollHeight;
+  if (shouldPinToBottom) scrollMessagesToBottom();
+  updateScrollButton();
 }
 
 function renderThinking() {
@@ -396,7 +487,7 @@ function renderThinking() {
     </div>
   `;
   els.messages.append(thinking);
-  els.messages.scrollTop = els.messages.scrollHeight;
+  scrollMessagesToBottom();
 }
 
 function renderStatus() {
@@ -408,50 +499,57 @@ function renderStatus() {
     : 'Добавьте endpoint и ключ в API_CONFIG_PLACEHOLDER в app-core.js.';
 }
 
-function startTyping(messageId, content) {
-  if (content.length > MAX_TYPED_CHARS) {
-    typingMessageId = null;
-    renderMessages();
-    return;
-  }
+function stopTyping() {
+}
 
-  typingMessageId = messageId;
+function getChatById(chatId) {
+  return state.chats.find((chat) => chat.id === chatId) ?? null;
+}
+
+function updateMessageContent(chatId, messageId, content) {
+  state = {
+    ...state,
+    chats: state.chats.map((chat) =>
+      chat.id === chatId
+        ? {
+            ...chat,
+            updatedAt: new Date().toISOString(),
+            messages: chat.messages.map((message) =>
+              message.id === messageId ? { ...message, content: String(content ?? '') } : message,
+            ),
+          }
+        : chat,
+    ),
+  };
+}
+
+function renderStreamingText(messageId, content) {
   const bubble = document.querySelector(`[data-message-id="${messageId}"]`);
   if (!bubble) return;
 
+  const shouldPinToBottom = isNearMessagesBottom();
   const actions = bubble.querySelector('.bubble-actions');
-  bubble.textContent = '';
+  bubble.textContent = content;
   if (actions) bubble.append(actions);
-
-  let index = 0;
-  const tick = () => {
-    const visible = content.slice(0, index);
-    const textNode = document.createTextNode(visible);
-    bubble.childNodes.forEach((node) => {
-      if (node.nodeType === Node.TEXT_NODE) node.remove();
-    });
-    bubble.prepend(textNode);
-    els.messages.scrollTop = els.messages.scrollHeight;
-
-    if (index >= content.length) {
-      typingMessageId = null;
-      if (typingTimer) window.clearTimeout(typingTimer);
-      typingTimer = null;
-      renderMessages();
-      return;
-    }
-
-    index += 12;
-    typingTimer = window.setTimeout(tick, TYPE_SPEED_MS);
-  };
-
-  tick();
+  if (shouldPinToBottom) scrollMessagesToBottom();
+  updateScrollButton();
 }
 
-function stopTyping() {
-  if (typingTimer) window.clearTimeout(typingTimer);
-  typingTimer = null;
-  typingMessageId = null;
+function isNearMessagesBottom() {
+  const distance = els.messages.scrollHeight - els.messages.scrollTop - els.messages.clientHeight;
+  return distance <= AUTO_SCROLL_MARGIN;
+}
+
+function scrollMessagesToBottom({ smooth = false } = {}) {
+  els.messages.scrollTo({
+    top: els.messages.scrollHeight,
+    behavior: smooth ? 'smooth' : 'auto',
+  });
+  updateScrollButton();
+}
+
+function updateScrollButton() {
+  els.scrollBottomBtn.classList.toggle('visible', !isNearMessagesBottom());
 }
 
 function setBusy(isBusy) {

@@ -66,9 +66,26 @@ async function proxyChatRequest(request, response) {
       body,
     });
 
+    const contentType = upstreamResponse.headers.get('content-type') || 'application/json; charset=utf-8';
+
+    if (upstreamResponse.ok && contentType.includes('text/event-stream') && upstreamResponse.body) {
+      response.writeHead(upstreamResponse.status, {
+        'Content-Type': contentType,
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+      });
+
+      for await (const chunk of upstreamResponse.body) {
+        response.write(chunk);
+      }
+
+      response.end();
+      return;
+    }
+
     const text = await upstreamResponse.text();
     response.writeHead(upstreamResponse.status, {
-      'Content-Type': upstreamResponse.headers.get('content-type') || 'application/json; charset=utf-8',
+      'Content-Type': contentType,
     });
     response.end(text);
   } catch (error) {

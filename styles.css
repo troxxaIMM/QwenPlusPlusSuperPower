@@ -211,6 +211,7 @@ h1 {
 }
 
 .conversation {
+  position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
@@ -262,6 +263,35 @@ h1 {
   gap: 16px;
   padding: 24px;
   overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+.scroll-bottom-button {
+  position: absolute;
+  right: 34px;
+  bottom: 148px;
+  z-index: 4;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(45, 212, 191, 0.48);
+  border-radius: 999px;
+  color: #06110f;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.scroll-bottom-button.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .empty-state {
@@ -639,6 +669,11 @@ code {
   .messages {
     min-height: 52vh;
     padding: 16px;
+  }
+
+  .scroll-bottom-button {
+    right: 24px;
+    bottom: 164px;
   }
 
   .composer {

@@ -110,7 +110,7 @@ export function buildOpenAIRequestBody({ model, messages, temperature, topP, max
     temperature: toNumber(temperature, DEFAULT_SETTINGS.temperature),
     top_p: toNumber(topP, DEFAULT_SETTINGS.topP),
     max_tokens: Math.max(1, Math.round(toNumber(maxTokens, DEFAULT_SETTINGS.maxTokens))),
-    stream: false,
+    stream: true,
   };
 }
 
